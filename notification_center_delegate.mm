@@ -1,7 +1,6 @@
 #include "notification_center_delegate.h"
 
-static NSMutableDictionary<unsigned long, NotificationCenterDelegate*>* delegateTable = nil;
-static unsigned long nextIndex = 0;
+static NSMutableDictionary<NSString*, NotificationCenterDelegate*>* delegateTable = nil;
 
 @implementation NotificationCenterDelegate
 
@@ -21,6 +20,8 @@ static void AsyncSendHandler(uv_async_t *handle) {
     Nan::New(info->response).ToLocalChecked()
   };
 
+  NSLog(@"AsyncSendHandler: %s", [info->id cStringUsingEncoding:NSASCIIStringEncoding]);
+
   info->callback->Call(2, argv);
 }
 
@@ -28,7 +29,7 @@ static void AsyncSendHandler(uv_async_t *handle) {
  * We save off the JavaScript callback here and initialize the libuv event
  * loop, which is needed in order to invoke the callback.
  */
-- (id)initWithActivationCallback:(Nan::Callback *)onActivation
+- (id)initWithActivationCallback:(Nan::Callback *)onActivation andId:(NSString *)id
 {
   if (!delegateTable) {
     delegateTable = [NSMutableDictionary dictionaryWithCapacity: 1];
@@ -36,12 +37,11 @@ static void AsyncSendHandler(uv_async_t *handle) {
 
   if (self = [super init]) {
     OnActivation = onActivation;
-
+    Id = id;
     uv_async_init(defaultLoop, &async, (uv_async_cb)AsyncSendHandler);
+    [delegateTable setObject: self forKey: Id];
+    NSLog(@"initWithActivationCallback: %s", [id cStringUsingEncoding:NSASCIIStringEncoding]);
   }
-
-  Info.delegateIndex = nextIndex++;
-  [delegateTable setObject: self forKey: Info.delegateIndex];
 
   return self;
 }
@@ -54,6 +54,7 @@ static void AsyncSendHandler(uv_async_t *handle) {
 {
   Info.isReply = notification.activationType == NSUserNotificationActivationTypeReplied;
   Info.callback = OnActivation;
+  Info.id = notification.identifier;
 
   if (Info.isReply) {
     Info.response = strdup(notification.response.string.UTF8String);
@@ -81,8 +82,8 @@ static void AsyncSendHandler(uv_async_t *handle) {
 
 - (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center
      shouldPresentNotification:(NSUserNotification *)notification {
-  long notificationIndex = [notification.userInfo objectForKey: @"notificationId"];
-  NotificationCenterDelegate* d = [delegateTable objectForKey: notificationIndex];
+  NSLog(@"shouldPresentNotification: %s", [notification.identifier cStringUsingEncoding:NSASCIIStringEncoding]);
+  NotificationCenterDelegate* d = [delegateTable objectForKey: notification.identifier];
 
   if (!d) {
     return NO;
@@ -93,15 +94,16 @@ static void AsyncSendHandler(uv_async_t *handle) {
 
 - (void)userNotificationCenter:(NSUserNotificationCenter *)center
        didActivateNotification:(NSUserNotification *)notification {
-  long notificationIndex = [notification.userInfo objectForKey: @"notificationId"];
-  NotificationCenterDelegate* d = [delegateTable objectForKey: notificationIndex];
+  NSLog(@"didActivateNotification: %s", [notification.identifier cStringUsingEncoding:NSASCIIStringEncoding]);
+
+  NotificationCenterDelegate* d = [delegateTable objectForKey: notification.identifier];
 
   if (!d) {
     return;
   }
 
-  [[delegateTable objectForKey: notificationIndex] userNotificationCenter: center didActivateNotification: notification];
-  [delegateTable removeObjectForKey: notificationIndex];
+  [[delegateTable objectForKey: notification.identifier] userNotificationCenter: center didActivateNotification: notification];
+  [delegateTable removeObjectForKey: notification.identifier];
 }
 
 @end

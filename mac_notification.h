@@ -16,13 +16,11 @@ class MacNotification : public Nan::ObjectWrap {
       Nan::Utf8String *body,
       Nan::Utf8String *icon,
       Nan::Utf8String *soundName,
-      bool canReply,
-      long delegateId);
+      bool canReply);
     ~MacNotification();
 
     static Nan::Utf8String* StringFromObjectOrNull(Local<Object> object, const char *key);
     static void SetStringOrUndefined(Nan::ReturnValue<Value> ret, Nan::Utf8String *prop);
-    static NotificationCenterDelegate* GetDelegateFromOptions(Local<Object> options);
 
     static NAN_METHOD(New);
     static NAN_METHOD(Close);
