@@ -1,5 +1,8 @@
 #include "notification_center_delegate.h"
 
+static NSMutableDictionary<unsigned long, NotificationCenterDelegate*>* delegateTable = nil;
+static unsigned long nextIndex = 0;
+
 @implementation NotificationCenterDelegate
 
 uv_loop_t *defaultLoop = uv_default_loop();
@@ -27,11 +30,18 @@ static void AsyncSendHandler(uv_async_t *handle) {
  */
 - (id)initWithActivationCallback:(Nan::Callback *)onActivation
 {
+  if (!delegateTable) {
+    delegateTable = [NSMutableDictionary dictionaryWithCapacity: 1];
+  }
+
   if (self = [super init]) {
     OnActivation = onActivation;
 
     uv_async_init(defaultLoop, &async, (uv_async_cb)AsyncSendHandler);
   }
+
+  Info.delegateIndex = nextIndex++;
+  [delegateTable setObject: self forKey: Info.delegateIndex];
 
   return self;
 }
@@ -62,6 +72,36 @@ static void AsyncSendHandler(uv_async_t *handle) {
      shouldPresentNotification:(NSUserNotification *)notification
 {
   return YES;
+}
+
+@end
+
+
+@implementation NotificationCenterDispatchDelegate
+
+- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center
+     shouldPresentNotification:(NSUserNotification *)notification {
+  long notificationIndex = [notification.userInfo objectForKey: @"notificationId"];
+  NotificationCenterDelegate* d = [delegateTable objectForKey: notificationIndex];
+
+  if (!d) {
+    return NO;
+  }
+
+  return [d userNotificationCenter: center shouldPresentNotification: notification];
+}
+
+- (void)userNotificationCenter:(NSUserNotificationCenter *)center
+       didActivateNotification:(NSUserNotification *)notification {
+  long notificationIndex = [notification.userInfo objectForKey: @"notificationId"];
+  NotificationCenterDelegate* d = [delegateTable objectForKey: notificationIndex];
+
+  if (!d) {
+    return;
+  }
+
+  [[delegateTable objectForKey: notificationIndex] userNotificationCenter: center didActivateNotification: notification];
+  [delegateTable removeObjectForKey: notificationIndex];
 }
 
 @end

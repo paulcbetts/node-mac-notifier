@@ -24,6 +24,8 @@ NAN_MODULE_INIT(MacNotification::Init) {
   Nan::SetAccessor(tpl->InstanceTemplate(), Nan::New("canReply").ToLocalChecked(), GetCanReply);
   Nan::SetAccessor(tpl->InstanceTemplate(), Nan::New("bundleId").ToLocalChecked(), GetBundleId);
 
+  [NSUserNotificationCenter defaultUserNotificationCenter].delegate = [[NotificationCenterDelegate alloc] init];
+
   constructor.Reset(Nan::GetFunction(tpl).ToLocalChecked());
   Nan::Set(target, Nan::New("MacNotification").ToLocalChecked(), Nan::GetFunction(tpl).ToLocalChecked());
 }
@@ -34,7 +36,8 @@ MacNotification::MacNotification(Nan::Utf8String *id,
   Nan::Utf8String *body,
   Nan::Utf8String *icon,
   Nan::Utf8String *soundName,
-  bool canReply)
+  bool canReply,
+  long delegateId)
   : _id(id), _title(title), _subtitle(subtitle), _body(body), _icon(icon), _soundName(soundName), _canReply(canReply) {
 
   NSUserNotification *notification = [[NSUserNotification alloc] init];
@@ -58,6 +61,7 @@ MacNotification::MacNotification(Nan::Utf8String *id,
   }
 
   notification.hasReplyButton = canReply;
+  [notification.userInfo setObject: delegateId forKey: @"notificationId"];
 
   NSUserNotificationCenter *center = [NSUserNotificationCenter defaultUserNotificationCenter];
   [center deliverNotification:notification];
@@ -91,8 +95,7 @@ NAN_METHOD(MacNotification::New) {
     MaybeLocal<Value> canReplyHandle = Nan::Get(options, Nan::New("canReply").ToLocalChecked());
     bool canReply = Nan::To<bool>(canReplyHandle.ToLocalChecked()).FromJust();
 
-    RegisterDelegateFromOptions(options);
-
+    NotificationCenterDelegate* delegate = GetDelegateFromOptions(options);
     MacNotification *notification = new MacNotification(id, title, subtitle, body, icon, soundName, canReply);
     notification->Wrap(info.This());
     info.GetReturnValue().Set(info.This());
@@ -161,7 +164,7 @@ NAN_GETTER(MacNotification::GetBundleId) {
   info.GetReturnValue().Set(bundleString.ToLocalChecked());
 }
 
-void MacNotification::RegisterDelegateFromOptions(Local<Object> options) {
+void MacNotification::GetDelegateFromOptions(Local<Object> options) {
   MaybeLocal<Value> activatedHandle = Nan::Get(options, Nan::New("activated").ToLocalChecked());
   Nan::Callback *activated = new Nan::Callback(activatedHandle.ToLocalChecked().As<Function>());
 
@@ -170,9 +173,7 @@ void MacNotification::RegisterDelegateFromOptions(Local<Object> options) {
     [[BundleIdentifierOverride alloc] initWithBundleId:[NSString stringWithUTF8String:**bundleId]];
   }
 
-  NotificationCenterDelegate *delegate = [[NotificationCenterDelegate alloc] initWithActivationCallback:activated];
-  NSUserNotificationCenter *center = [NSUserNotificationCenter defaultUserNotificationCenter];
-  center.delegate = delegate;
+  return [[NotificationCenterDelegate alloc] initWithActivationCallback:activated];
 }
 
 Nan::Utf8String* MacNotification::StringFromObjectOrNull(Local<Object> object, const char *key) {
